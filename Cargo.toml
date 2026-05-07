@@ -12,4 +12,6 @@ opt-level = 3
 [dependencies]
 avian3d = "0.6.1"
 bevy = "0.18.1"
-noisy_bevy = "0.13.0"
+dot_vox = "5.2.0"
+# noisy_bevy = "0.13.0"
+noisy_bevy = { path = "../../clones/noisy_bevy" }

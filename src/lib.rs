@@ -1,3 +1,4 @@
+mod boundary;
 mod element;
 
 use std::collections::{HashMap, HashSet};
@@ -9,7 +10,8 @@ use bevy::{
     prelude::*,
 };
 
-pub use vox_dir::Element;
+pub use boundary::BoundaryCollider;
+pub use element::Element;
 
 pub const N: usize = 16;
 pub const H: f32 = 1.0 / N as f32;
@@ -21,6 +23,7 @@ pub struct VoxelPlugin;
 impl Plugin for VoxelPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(FixedUpdate, clean_body);
+        app.add_systems(FixedUpdate, boundary::sync_boundary_collider);
     }
 }
 
@@ -31,9 +34,11 @@ impl Plugin for VoxelPlugin {
 #[derive(Component, Default)]
 #[require(Transform, Visibility)]
 pub struct Grid {
-    voxels: HashMap<IVec3, Box<[u8; N * N * N]>>,
+    pub(crate) voxels: HashMap<IVec3, Box<[u8; N * N * N]>>,
     /// Chunks whose mesh + collider need a rebuild.
     dirty_chunks: HashSet<IVec3>,
+    /// Chunks added since the last `BoundaryCollider` sync.
+    pub(crate) new_chunks: HashSet<IVec3>,
     chunk_entities: HashMap<IVec3, Entity>,
 }
 
@@ -41,6 +46,10 @@ pub struct Grid {
 pub struct TerrainMaterial(pub Handle<StandardMaterial>);
 
 impl Grid {
+    pub fn len(&self) -> usize {
+        self.voxels.len() * N * N * N
+    }
+
     /// Add a chunk at `idx` if one isn't already loaded there, returning
     /// whether it was newly added. `tags` is invoked only on miss, so callers
     /// can defer expensive generation. The new chunk and any present
@@ -52,6 +61,7 @@ impl Grid {
         }
         self.voxels.insert(idx, tags());
         self.dirty_chunks.insert(idx);
+        self.new_chunks.insert(idx);
         for d in Element::FACES {
             let n = idx + d;
             if self.voxels.contains_key(&n) {
