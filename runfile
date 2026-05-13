@@ -1,9 +1,11 @@
 #!/bin/bash
 
+MAIN_EXAMPLE=falling_sand
+
 function run {
-  cargo run --example proc_gen
+  cargo run --example $MAIN_EXAMPLE
 }
 
 function dbg {
-  cargo run --example proc_gen --features bevy/debug
+  cargo run --example $MAIN_EXAMPLE --features bevy/debug
 }

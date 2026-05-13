@@ -13,9 +13,15 @@ use bevy::{
 pub use boundary::BoundaryCollider;
 pub use element::Element;
 
+mod prelude {
+    pub use Grid;
+    pub use H;
+    pub use N;
+    pub use VoxelPlugin;
+}
+
 pub const N: usize = 16;
 pub const H: f32 = 1.0 / N as f32;
-const N_I: i32 = N as i32;
 
 #[derive(Default)]
 pub struct VoxelPlugin;
@@ -33,8 +39,8 @@ impl Plugin for VoxelPlugin {
 /// part of the public API.
 #[derive(Component, Default)]
 #[require(Transform, Visibility)]
-pub struct Grid {
-    pub(crate) voxels: HashMap<IVec3, Box<[u8; N * N * N]>>,
+pub struct Grid<T> {
+    pub(crate) voxels: HashMap<IVec3, Box<[T; N * N * N]>>,
     /// Chunks whose mesh + collider need a rebuild.
     dirty_chunks: HashSet<IVec3>,
     /// Chunks added since the last `BoundaryCollider` sync.
@@ -45,7 +51,7 @@ pub struct Grid {
 #[derive(Resource)]
 pub struct TerrainMaterial(pub Handle<StandardMaterial>);
 
-impl Grid {
+impl Grid<T> {
     pub fn len(&self) -> usize {
         self.voxels.len() * N * N * N
     }
@@ -55,7 +61,7 @@ impl Grid {
     /// can defer expensive generation. The new chunk and any present
     /// neighbors are marked dirty (boundary face visibility depends on
     /// neighbors).
-    pub fn add_chunk(&mut self, idx: IVec3, tags: impl FnOnce() -> Box<[u8; N * N * N]>) -> bool {
+    pub fn add_chunk(&mut self, idx: IVec3, tags: impl FnOnce() -> Box<[T; N * N * N]>) -> bool {
         if self.voxels.contains_key(&idx) {
             return false;
         }
@@ -82,7 +88,7 @@ impl Grid {
         (voxel, Element::from_normal(hit.normal))
     }
 
-    pub fn get(&self, v: IVec3) -> u8 {
+    pub fn get(&self, v: IVec3) -> T {
         let (chunk_idx, local) = split(v);
         self.voxels.get(&chunk_idx).map_or(0, |c| c[lin(local)])
     }
@@ -90,7 +96,7 @@ impl Grid {
     /// Set voxel `v` to `tag`, returning the previous value. Marks the owning
     /// chunk dirty (and any boundary-touching neighbors so their meshes
     /// rebuild). No-op (returns 0) if no chunk covers `v`.
-    pub fn set(&mut self, v: IVec3, tag: u8) -> u8 {
+    pub fn set(&mut self, v: IVec3, tag: T) -> T {
         let (chunk_idx, local) = split(v);
         let Some(chunk) = self.voxels.get_mut(&chunk_idx) else {
             return 0;
@@ -105,7 +111,7 @@ impl Grid {
         for axis in 0..3 {
             let step = if local[axis] == 0 {
                 -1
-            } else if local[axis] == N_I - 1 {
+            } else if local[axis] == N as i32 - 1 {
                 1
             } else {
                 continue;
@@ -124,14 +130,14 @@ impl Grid {
 fn split(v: IVec3) -> (IVec3, IVec3) {
     (
         IVec3::new(
-            v.x.div_euclid(N_I),
-            v.y.div_euclid(N_I),
-            v.z.div_euclid(N_I),
+            v.x.div_euclid(N as i32),
+            v.y.div_euclid(N as i32),
+            v.z.div_euclid(N as i32),
         ),
         IVec3::new(
-            v.x.rem_euclid(N_I),
-            v.y.rem_euclid(N_I),
-            v.z.rem_euclid(N_I),
+            v.x.rem_euclid(N as i32),
+            v.y.rem_euclid(N as i32),
+            v.z.rem_euclid(N as i32),
         ),
     )
 }
@@ -142,7 +148,7 @@ fn lin(local: IVec3) -> usize {
 
 fn clean_body(
     mut commands: Commands,
-    mut grids: Query<(Entity, &mut Grid)>,
+    mut grids: Query<(Entity, &mut Grid<u8>)>,
     mut meshes: ResMut<Assets<Mesh>>,
     terrain_mat: Res<TerrainMaterial>,
 ) {
@@ -206,7 +212,7 @@ fn chunk_to_mesh(chunk_idx: IVec3, voxels: &HashMap<IVec3, Box<[u8; N * N * N]>>
     let n = N as i32;
     // Sample at local coord; if outside this chunk, walk into the neighbor
     // chunk so we don't draw a face between two solid voxels at a chunk seam.
-    let get = |x: i32, y: i32, z: i32| -> u8 {
+    let get = |x: i32, y: i32, z: i32| -> T {
         if 0 <= x && x < n && 0 <= y && y < n && 0 <= z && z < n {
             return chunk[x as usize + N * (y as usize + N * z as usize)];
         }

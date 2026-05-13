@@ -1,4 +1,4 @@
-use std::ops::{Add, BitOr, Deref};
+use std::ops::{Add, /*BitOr,*/ Deref};
 
 use bevy::math::U8Vec3;
 use bevy::prelude::*;
@@ -114,12 +114,12 @@ impl Add<Element> for IVec3 {
     }
 }
 
-impl BitOr for Element {
-    type Output = Element;
-    fn bitor(self, rhs: Element) -> Self::Output {
-        Element(self.0 | rhs.0)
-    }
-}
+// impl BitOr for Element {
+//     type Output = Element;
+//     fn bitor(self, rhs: Element) -> Self::Output {
+//         Element(self.0 | rhs.0)
+//     }
+// }
 
 impl Deref for Element {
     type Target = u8;
