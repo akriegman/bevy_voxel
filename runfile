@@ -9,3 +9,7 @@ function run {
 function dbg {
   cargo run --example $MAIN_EXAMPLE --features bevy/debug
 }
+
+function flame {
+  cargo flamegraph --example $MAIN_EXAMPLE
+}

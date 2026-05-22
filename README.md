@@ -1,71 +1,14 @@
-# voxxelmaxx
+# bevy_voxel
 
-A 3D falling sand game engine. And by game engine, I mean Bevy plugin.
+This is a package for working with voxels in Bevy. This is not the first package for working with voxels in Bevy. My hope is that we can make a general enough API that we can serve a large number of use cases, and hopefully start to deduplicate some of the work in this area.
 
-The core idea is the `Grid` component, which can be thought of as an ECS for a uniform grid of entities with local systems, meaning systems that act on voxels and can only touch neighboring voxels.
-> There's two ways to do this: we can individually install systems on each `Grid` and let the `Grid` handle iteration, or we can put the systems in the actual Bevy ECS, somehow make them query `Grid`s based on the types in the tuple they hold for each voxel, and let the system handle iteration, like how systems iterate over `Query`s.
+The API so far:
+- `Grid<T>` is a component that holds a grid of data in chunks.
+- `Boundary` is a marker component for `Grid`s that should be treated as if there is more outside their boundary. Later we'll add some functionality to this, so it can be used eg in procedural generation for finding which chunks to generate next.
+- `BodyTracker` tracks the connectivity of the `Grid` it's attached to. You can use it to iterate over the connected components of the `Grid`, and then to iterate over the voxels in each component. If the entity has a `Boundary`, then any voxels connected to the boundary will be considered connected to each other.
 
-## Engineering choices
+So far most of the interesting stuff is in `connectivity.rs` and the example `falling_sand.rs`.
 
-We have some decisions to make. For each of these, we can either make a choice, or make the engine generic over the choices.
+One big goal is to make it easy to set up compute shaders to run on these grids. If it's not too inflexible, we can handle the passing of the chunks to the GPU, and provide a wgsl library with some helpers for accessing the voxels from the correct chunk.
 
-ways to prevent race conditions:
-- atomics
-- process non-adjacent chunks concurrently, one thread per chunk
-- process non-adjacent voxels concurrently
-- use a stateless update rule
-
-ways to make adjacent voxels move together:
-- process bottom to top
-  - helps with common automata like water and sand, not fully general
-- * two buffers
-- just make it random
-
-ways to render
-- rasterize
-- raymarch
-  - people tell me this scales better with voxels. not sure it'll work with non cubes though. I guess we'll support both, bevy is already generic over rendering methods.
-
-Conclusion: we'll use two buffers, leave race conditions up to the user so that they can either make things stateless or use atomics, and provide both rendering pipelines.
-
-## Design
-
-- Written in Rust with Bevy
-
-- Chunks are 1x1x1 units, with variable voxels per chunk.
-
-- Chunks live inside grids. A grid is a lattice of chunks that moves as one rigid body.
-
-- Chunks have multiple buffers. Eg one buffer for the material tag, another buffer for water level.
-  - > we can either have the buffers be type parameters, or use an entity component system to do "for each chunk with an X buffer do Y"
-
-- Chunk -> render mesh and chunk -> collision mesh are overridable functions, but we provide sensible defaults and shared machinery such as triangle combining passes.
-
-## Examples
-
-Some systems we would like to support:
-
-- procedural generation
-  - this could be in a separate subapp...
-- body detection
-- rasterizing one grid onto another, conserving voxels
-  - this is a stable matching problem. it could also be made an optimal transport problem, but stable matching is simpler and I think more natural.
-- chunk -> collider
-- chunk -> mesh
-- cellular automota
-  - margolus neighborhoods
-
-I would also like to support some weird geometry.
-
-- Instead of cube voxels, rhombic dodecahedral (rad) voxels. There's a few ways to achieve this:
-  - Use a skewed lattice, where the origin and the three axis generators make a regular simplex
-  - Use every other voxel of the cubic grid. Ie you checker the cubic grid, then you cut each white cell into 6 pyramids and glue them on to the 6 neighboring black cells
-    - This would require either leaving half the elements unused in the buffers, or having the dimensions of the buffers not be all the same length
-  - have four rad voxel per cell of the cubic grid
-
-If we do not want to compromise on grids having orthonormal lattices and buffers being nxnxn, then we would have to use the third option.
-
-- Instead of building on the cells of the grid, building on the faces.
-  - Instead of a material tag per cell, we would need either:
-    - Three buffers of material tags for the three orientations of faces
-    - One buffer of structs holding three material tags each
+One big decision is how to store the chunks. One option is to make the chunks components and put them on child entities. We'll need a child per chunk anyways for the colliders and meshes, and this way we also get change detection. This is what I tried at first but I didn't like having to pass around a `Query<&mut Chunk>` to every function that deals with chunks. But I didn't know about `SystemParam`s then. So maybe we can try that again with a `Grids` or `Chunks` `SystemParam`. It's also unclear if Bevy change detection is the right thing here. Many grid based systems need to update every _neighbor_ of every mutated voxel. So we can manually `deref_mut` the neighboring chunks when we modify a voxel on a chunk boundary. Noita apparently tracks a dirty rectangle in each chunk [citation needed] to avoid iterating over the entirety of every dirty chunk. Some systems need to act on voxels whose face neighbors have changed, others whose edge and corner neighbors have changed, etc. Maybe no storage scheme is general enough. Idk. Chunks as components is probably the move, we should try it.

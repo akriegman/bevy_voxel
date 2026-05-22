@@ -1,4 +1,5 @@
-use std::ops::{Add, /*BitOr,*/ Deref};
+use std::ops::Add; // disambiguate
+use std::ops::*;
 
 use bevy::math::U8Vec3;
 use bevy::prelude::*;
@@ -34,7 +35,7 @@ fn btoi(b: u8) -> i32 {
 /// they use a similar bit packing scheme. For them 0b00111111 represents an isolated voxel
 /// and 0b00000000 represents an interior voxel, so they need 0b01000000 to represent an
 /// empty voxel.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Element(u8);
 
 impl Element {
@@ -59,21 +60,24 @@ impl Element {
     /// The negative Z axis.
     pub const NEG_Z: Self = Self::new(0, 0, -1);
 
-    /// The unit axes.
-    pub const AXES: [Self; 3] = [Self::X, Self::Y, Self::Z];
+    /// The unit axes, in minor to major order
+    pub const AXES: [Self; 3] = [Self::X, Self::Z, Self::Y];
 
-    /// Displacements across a face.
+    /// Displacements across a face, in minor to major order
     pub const FACES: [Self; 6] = [
         Self::X,
-        Self::Y,
-        Self::Z,
         Self::NEG_X,
-        Self::NEG_Y,
+        Self::Z,
         Self::NEG_Z,
+        Self::Y,
+        Self::NEG_Y,
     ];
 
-    // TODO: const fn variant of `new` so DIRS (all 27 displacements) can be
-    // declared as a `pub const`. Range::map isn't const-evaluable.
+    pub const FRAMES: [[Self; 3]; 3] = [
+        [Self::X, Self::Y, Self::Z],
+        [Self::Z, Self::X, Self::Y],
+        [Self::Y, Self::Z, Self::X],
+    ];
 
     pub const fn new(x: i32, y: i32, z: i32) -> Self {
         Self((itob(x) << SHIFTS.x) | (itob(y) << SHIFTS.y) | (itob(z) << SHIFTS.z))
@@ -91,8 +95,6 @@ impl Element {
         )
     }
 
-    /// Pick the dominant-axis face from a (roughly axis-aligned) surface
-    /// normal. For raycast hits on a voxel collider this is exact.
     pub fn from_normal(n: Vec3) -> Self {
         let a = n.abs();
         if a.x >= a.y && a.x >= a.z {
@@ -109,11 +111,46 @@ impl Element {
 
 impl Add<Element> for IVec3 {
     type Output = IVec3;
-    fn add(self, rhs: Element) -> IVec3 {
+    fn add(self, rhs: Element) -> Self::Output {
         self + rhs.as_ivec3()
     }
 }
 
+// impl Add<Element> for Element {
+//     type Output = Element;
+//     fn add(self, rhs: Element) -> Self::Output {
+//         self + rhs.as_ivec3()
+//     }
+// }
+
+impl Sub<Element> for IVec3 {
+    type Output = IVec3;
+    fn sub(self, rhs: Element) -> Self::Output {
+        self - rhs.as_ivec3()
+    }
+}
+
+impl Mul<i32> for Element {
+    type Output = Element;
+    fn mul(self, rhs: i32) -> Self::Output {
+        match rhs {
+            0 => Self::ZERO,
+            1 => self,
+            -1 => -self,
+            _ => panic!("can only multiply an Element by 0, 1, -1"),
+        }
+    }
+}
+
+/// swaps opposite directions. preserves the two extra bits.
+impl Neg for Element {
+    type Output = Self;
+    fn neg(self) -> Self::Output {
+        Self(self.bitand(0xc0) | self.bitand(0x15).shl(1) | self.bitand(0x2a).shr(1))
+    }
+}
+
+// should get this from deref right?
 // impl BitOr for Element {
 //     type Output = Element;
 //     fn bitor(self, rhs: Element) -> Self::Output {
