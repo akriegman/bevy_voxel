@@ -29,12 +29,12 @@ pub trait Connector: Send + Sync + 'static {
 /* ------------------------- component ------------------------- */
 
 type Piece = Option<(IVec3, i16)>;
-type Liberties<const N_SQUARE: usize> = BitArray<[usize; N_SQUARE], Lsb0>;
+type Liberties<const N_SQUARE: usize = 256> = BitArray<[usize; N_SQUARE], Lsb0>;
 
 #[derive(Component)]
-pub struct BodyTracker<C: Connector, const N: usize> {
+pub struct BodyTracker<C: Connector, const N: usize = 16, const N_SQUARE: usize = 256> {
     /// face_bodies[chunk][face] is a list of (piece_id, cross_chunk_connection_points) pairs.
-    face_bodies: HashMap<IVec3, [Vec<(i16, Liberties<N>)>; 6]>,
+    face_bodies: HashMap<IVec3, [Vec<(i16, Liberties<N_SQUARE>)>; 6]>,
     /// graph[piece] is the list of pieces it touches
     graph: HashMap<Piece, Vec<Piece>>,
     /// reps[chunk][id] is a voxel representative for the piece
@@ -42,7 +42,7 @@ pub struct BodyTracker<C: Connector, const N: usize> {
     marker: std::marker::PhantomData<C>,
 }
 
-impl<C: Connector, const N: usize> BodyTracker<C, N> {
+impl<C: Connector, const N: usize, const N_SQUARE: usize> BodyTracker<C, N, N_SQUARE> {
     pub fn new() -> Self {
         Self {
             face_bodies: HashMap::new(),
@@ -52,7 +52,7 @@ impl<C: Connector, const N: usize> BodyTracker<C, N> {
         }
     }
 
-    pub fn bodies<'a>(&'a self, grid: &'a Grid<C::Item, N>) -> Bodies<'a, C, N> {
+    pub fn bodies<'a>(&'a self, grid: &'a Grid<C::Item, N>) -> Bodies<'a, C, N, N_SQUARE> {
         Bodies {
             tracker: self,
             grid,
@@ -63,9 +63,13 @@ impl<C: Connector, const N: usize> BodyTracker<C, N> {
 
 /* --------------------------- system -------------------------- */
 
-fn check_connectivity<C: Connector, const N: usize>(
+fn check_connectivity<C: Connector, const N: usize, const N_SQUARE: usize>(
     grids: Query<
-        (&Grid<C::Item, N>, &mut BodyTracker<C, N>, Option<&Boundary>),
+        (
+            &Grid<C::Item, N>,
+            &mut BodyTracker<C, N, N_SQUARE>,
+            Option<&Boundary>,
+        ),
         Changed<Grid<C::Item, N>>,
     >,
 ) {
@@ -199,14 +203,16 @@ fn check_connectivity<C: Connector, const N: usize>(
 
 /* ------------------------- iterators ------------------------- */
 
-pub struct Bodies<'a, C: Connector, const N: usize> {
-    tracker: &'a BodyTracker<C, N>,
+pub struct Bodies<'a, C: Connector, const N: usize = 16, const N_SQUARE: usize = 256> {
+    tracker: &'a BodyTracker<C, N, N_SQUARE>,
     grid: &'a Grid<C::Item, N>,
     unvisited: HashSet<Piece>,
 }
 
-impl<'a, C: Connector, const N: usize> Iterator for Bodies<'a, C, N> {
-    type Item = Body<'a, C, N>;
+impl<'a, C: Connector, const N: usize, const N_SQUARE: usize> Iterator
+    for Bodies<'a, C, N, N_SQUARE>
+{
+    type Item = Body<'a, C, N, N_SQUARE>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let &start = if self.unvisited.contains(&None) {
@@ -234,8 +240,8 @@ impl<'a, C: Connector, const N: usize> Iterator for Bodies<'a, C, N> {
     }
 }
 
-pub struct Body<'a, C: Connector, const N: usize> {
-    tracker: &'a BodyTracker<C, N>,
+pub struct Body<'a, C: Connector, const N: usize, const N_SQUARE: usize> {
+    tracker: &'a BodyTracker<C, N, N_SQUARE>,
     grid: &'a Grid<C::Item, N>,
     pieces: Vec<Piece>,
     current_chunk: IVec3,
@@ -243,7 +249,9 @@ pub struct Body<'a, C: Connector, const N: usize> {
     visited: Chunk<bool, N>,
 }
 
-impl<'a, C: Connector, const N: usize> Iterator for Body<'a, C, N> {
+impl<'a, C: Connector, const N: usize, const N_SQUARE: usize> Iterator
+    for Body<'a, C, N, N_SQUARE>
+{
     type Item = IVec3;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -282,17 +290,21 @@ impl<'a, C: Connector, const N: usize> Iterator for Body<'a, C, N> {
 
 /* --------------------------- plugin -------------------------- */
 
-pub struct ConnectivityPlugin<C: Connector, const N: usize> {
+pub struct ConnectivityPlugin<C: Connector, const N: usize, const N_SQUARE: usize> {
     marker: std::marker::PhantomData<C>,
 }
 
-impl<C: Connector, const N: usize> Plugin for ConnectivityPlugin<C, N> {
+impl<C: Connector, const N: usize, const N_SQUARE: usize> Plugin
+    for ConnectivityPlugin<C, N, N_SQUARE>
+{
     fn build(&self, app: &mut App) {
-        app.add_systems(FixedUpdate, check_connectivity::<C, N>);
+        app.add_systems(FixedUpdate, check_connectivity::<C, N, N_SQUARE>);
     }
 }
 
-impl<C: Connector, const N: usize> Default for ConnectivityPlugin<C, N> {
+impl<C: Connector, const N: usize, const N_SQUARE: usize> Default
+    for ConnectivityPlugin<C, N, N_SQUARE>
+{
     fn default() -> Self {
         Self {
             marker: std::marker::PhantomData,

@@ -7,7 +7,7 @@ use std::ops::*;
 use crate::prelude::*;
 /* --------------------------- chunk --------------------------- */
 
-pub struct Chunk<T, const N: usize>([[[T; N]; N]; N]);
+pub struct Chunk<T, const N: usize = 16>([[[T; N]; N]; N]);
 
 impl<T: Copy, const N: usize> Chunk<T, N> {
     pub const fn new(fill: T) -> Self {
@@ -50,7 +50,7 @@ impl<T, const N: usize> IndexMut<IVec3> for Chunk<T, N> {
 /* --------------------------- grid ---------------------------- */
 
 #[derive(Component, Default)]
-pub struct Grid<T, const N: usize> {
+pub struct Grid<T, const N: usize = 16> {
     pub chunks: HashMap<IVec3, Box<Chunk<T, N>>>,
     // dirty_chunks: HashSet<IVec3>,
     // children: HashMap<IVec3, Entity>,
