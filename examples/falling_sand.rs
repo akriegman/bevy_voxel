@@ -2,6 +2,8 @@
 #![feature(const_trait_impl)]
 #![feature(const_closures)]
 
+use std::usize;
+
 use bevy::asset::RenderAssetUsages;
 use bevy::input::mouse::AccumulatedMouseMotion;
 use bevy::mesh::*;
@@ -12,7 +14,9 @@ use bevy::window::{CursorGrabMode, CursorOptions};
 use avian3d::prelude::*;
 
 use voxxelmaxx::prelude::*;
-
+pub const N: usize = 16;
+pub const N_SQUARE: usize = 256;
+pub const DIMS: IVec3 = IVec3::splat(N as i32);
 /* -------------------------- setup ---------------------------- */
 
 fn main() {
@@ -27,7 +31,7 @@ fn main() {
         }))
         .add_plugins(PhysicsPlugins::default())
         .add_plugins(MeshPickingPlugin)
-        .add_plugins(ConnectivityPlugin::<SandConnector>::default())
+        .add_plugins(ConnectivityPlugin::<SandConnector, N, N_SQUARE>::default())
         .insert_resource(Gravity::default())
         .add_systems(Startup, setup)
         .add_systems(FixedUpdate, falling_sand)

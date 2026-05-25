@@ -29,12 +29,12 @@ pub trait Connector: Send + Sync + 'static {
 /* ------------------------- component ------------------------- */
 
 type Piece = Option<(IVec3, i16)>;
-type Liberties = BitArr!(for N * N);
+type Liberties<const N_SQUARE: usize = 256> = BitArray<[usize; N_SQUARE], Lsb0>;
 
 #[derive(Component)]
-pub struct BodyTracker<C: Connector> {
+pub struct BodyTracker<C: Connector, const N: usize = 16, const N_SQUARE: usize = 256> {
     /// face_bodies[chunk][face] is a list of (piece_id, cross_chunk_connection_points) pairs.
-    face_bodies: HashMap<IVec3, [Vec<(i16, Liberties)>; 6]>,
+    face_bodies: HashMap<IVec3, [Vec<(i16, Liberties<N_SQUARE>)>; 6]>,
     /// graph[piece] is the list of pieces it touches
     graph: HashMap<Piece, Vec<Piece>>,
     /// reps[chunk][id] is a voxel representative for the piece
@@ -42,7 +42,7 @@ pub struct BodyTracker<C: Connector> {
     marker: std::marker::PhantomData<C>,
 }
 
-impl<C: Connector> BodyTracker<C> {
+impl<C: Connector, const N: usize, const N_SQUARE: usize> BodyTracker<C, N, N_SQUARE> {
     pub fn new() -> Self {
         Self {
             face_bodies: HashMap::new(),
@@ -52,7 +52,7 @@ impl<C: Connector> BodyTracker<C> {
         }
     }
 
-    pub fn bodies<'a>(&'a self, grid: &'a Grid<C::Item>) -> Bodies<'a, C> {
+    pub fn bodies<'a>(&'a self, grid: &'a Grid<C::Item, N>) -> Bodies<'a, C, N, N_SQUARE> {
         Bodies {
             tracker: self,
             grid,
@@ -63,8 +63,15 @@ impl<C: Connector> BodyTracker<C> {
 
 /* --------------------------- system -------------------------- */
 
-fn check_connectivity<C: Connector>(
-    grids: Query<(&Grid<C::Item>, &mut BodyTracker<C>, Option<&Boundary>), Changed<Grid<C::Item>>>,
+fn check_connectivity<C: Connector, const N: usize, const N_SQUARE: usize>(
+    grids: Query<
+        (
+            &Grid<C::Item, N>,
+            &mut BodyTracker<C, N, N_SQUARE>,
+            Option<&Boundary>,
+        ),
+        Changed<Grid<C::Item, N>>,
+    >,
 ) {
     let mut stack = Vec::new();
     for (grid, bodies, boundary) in grids {
@@ -80,9 +87,9 @@ fn check_connectivity<C: Connector>(
             bodies.face_bodies.insert(*chunk_idx, Default::default());
             bodies.reps.entry(*chunk_idx).or_default().clear();
 
-            let mut body_ids = Chunk::<i16>::new(-1);
+            let mut body_ids = Chunk::<i16, N>::new(-1);
             let mut current_id = 0;
-            for idx in prism(IVec3::ZERO, DIMS) {
+            for idx in prism(IVec3::ZERO, Chunk::<C::Item, N>::DIMS) {
                 // we check solidity before pushing, because if we decide to
                 // check connectivity that will have have to happen before pushing too.
                 // we check if it's already in a body after popping because
@@ -196,14 +203,16 @@ fn check_connectivity<C: Connector>(
 
 /* ------------------------- iterators ------------------------- */
 
-pub struct Bodies<'a, C: Connector> {
-    tracker: &'a BodyTracker<C>,
-    grid: &'a Grid<C::Item>,
+pub struct Bodies<'a, C: Connector, const N: usize = 16, const N_SQUARE: usize = 256> {
+    tracker: &'a BodyTracker<C, N, N_SQUARE>,
+    grid: &'a Grid<C::Item, N>,
     unvisited: HashSet<Piece>,
 }
 
-impl<'a, C: Connector> Iterator for Bodies<'a, C> {
-    type Item = Body<'a, C>;
+impl<'a, C: Connector, const N: usize, const N_SQUARE: usize> Iterator
+    for Bodies<'a, C, N, N_SQUARE>
+{
+    type Item = Body<'a, C, N, N_SQUARE>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let &start = if self.unvisited.contains(&None) {
@@ -231,16 +240,18 @@ impl<'a, C: Connector> Iterator for Bodies<'a, C> {
     }
 }
 
-pub struct Body<'a, C: Connector> {
-    tracker: &'a BodyTracker<C>,
-    grid: &'a Grid<C::Item>,
+pub struct Body<'a, C: Connector, const N: usize, const N_SQUARE: usize> {
+    tracker: &'a BodyTracker<C, N, N_SQUARE>,
+    grid: &'a Grid<C::Item, N>,
     pieces: Vec<Piece>,
     current_chunk: IVec3,
     stack: Vec<IVec3>,
-    visited: Chunk<bool>,
+    visited: Chunk<bool, N>,
 }
 
-impl<'a, C: Connector> Iterator for Body<'a, C> {
+impl<'a, C: Connector, const N: usize, const N_SQUARE: usize> Iterator
+    for Body<'a, C, N, N_SQUARE>
+{
     type Item = IVec3;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -257,7 +268,7 @@ impl<'a, C: Connector> Iterator for Body<'a, C> {
                     self.stack.push(vox + *face)
                 }
             }
-            return Some(self.current_chunk * DIMS + vox);
+            return Some(self.current_chunk * Chunk::<C::Item, N>::DIMS + vox);
         }
 
         match self.pieces.pop()? {
@@ -279,17 +290,21 @@ impl<'a, C: Connector> Iterator for Body<'a, C> {
 
 /* --------------------------- plugin -------------------------- */
 
-pub struct ConnectivityPlugin<C: Connector> {
+pub struct ConnectivityPlugin<C: Connector, const N: usize, const N_SQUARE: usize> {
     marker: std::marker::PhantomData<C>,
 }
 
-impl<C: Connector> Plugin for ConnectivityPlugin<C> {
+impl<C: Connector, const N: usize, const N_SQUARE: usize> Plugin
+    for ConnectivityPlugin<C, N, N_SQUARE>
+{
     fn build(&self, app: &mut App) {
-        app.add_systems(FixedUpdate, check_connectivity::<C>);
+        app.add_systems(FixedUpdate, check_connectivity::<C, N, N_SQUARE>);
     }
 }
 
-impl<C: Connector> Default for ConnectivityPlugin<C> {
+impl<C: Connector, const N: usize, const N_SQUARE: usize> Default
+    for ConnectivityPlugin<C, N, N_SQUARE>
+{
     fn default() -> Self {
         Self {
             marker: std::marker::PhantomData,
