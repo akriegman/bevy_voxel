@@ -14,11 +14,10 @@ avian3d = "0.6.1"
 bevy = { version = "0.18.1", default-features = false, features = ["3d"] }
 bitvec = "1.0.1"
 dot_vox = "5.2.0"
-noisy_bevy = { path = "../../clones/noisy_bevy" }
 rand = "0.10.1"
 
 [dev-dependencies]
 bevy-inspector-egui = "0.36.0"
 
 [patch.crates-io]
-parry3d = { path = "/Users/aaron/clones/parry/crates/parry3d" }
+parry3d = { git = "https://github.com/akriegman/parry", branch = "voxel-0.26.1" }

@@ -239,10 +239,11 @@ fn mesh(
                 let Some(cell) = grid.get(idx - axis) else {
                     continue;
                 };
+                let flip = *vox == 0;
                 match (vox, cell) {
                     (0, 1..) | (1.., 0) => {
                         indices.extend_from_slice(
-                            &if *vox != 0 {
+                            &if !flip {
                                 [0, 2, 1, 0, 3, 2]
                             } else {
                                 [0, 1, 2, 0, 2, 3]
@@ -260,15 +261,18 @@ fn mesh(
                             .map(|p| swizzle(p) + idx.as_vec3()),
                         );
 
-                        normals.extend_from_slice(&[vec3(1., 0., 0.); 4].map(swizzle));
+                        normals.extend_from_slice(
+                            &[vec3(if flip { 1. } else { -1. }, 0., 0.); 4].map(swizzle),
+                        );
 
                         use std::ops::*;
-                        let a = idx.dot(IVec3::splat(1)).rem_euclid(2);
+                        let idx = if flip { idx - axis } else { idx };
+                        let a = idx.dot(IVec3::splat(1)).add(1).rem_euclid(2);
                         let b = idx.rem_euclid(IVec3::splat(2)).dot(IVec3::splat(1)).rem(3) == 0;
                         let c = idx.shr(1i32).dot(IVec3::splat(1)).rem_euclid(2);
 
-                        let dither = a.shl(0) | (b as i32).bitand(c);
-                        let dither = 1. - (dither as f32 / 1. - 0.5) / 2.;
+                        let dither = a | (b as i32).bitand(c);
+                        let dither = 1. + (dither as f32 / 1. - 0.5) / 3.;
                         colors.extend_from_slice(&[PALETTE[(vox + cell) as usize] * dither; 4]);
                     }
                     _ => (),
@@ -383,7 +387,7 @@ fn interact(
         corner(0., 1.),
     ];
     for i in 0..4 {
-        gizmos.line(corners[i], corners[(i + 1) % 4], Color::BLACK);
+        gizmos.line(corners[i], corners[(i + 1) % 4], Color::WHITE);
     }
 
     let base = base.as_ivec3();
