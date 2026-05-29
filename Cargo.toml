@@ -1,5 +1,5 @@
 [package]
-name = "voxxelmaxx"
+name = "bevy_voxel"
 version = "0.1.0"
 edition = "2024"
 
@@ -13,12 +13,9 @@ opt-level = 3
 avian3d = "0.6.1"
 bevy = { version = "0.18.1", default-features = false, features = ["3d"] }
 bitvec = "1.0.1"
-dot_vox = "5.2.0"
-noisy_bevy = { path = "../../clones/noisy_bevy" }
-rand = "0.10.1"
 
 [dev-dependencies]
-bevy-inspector-egui = "0.36.0"
+rand = "0.10.1"
 
 [patch.crates-io]
 parry3d = { path = "/Users/aaron/clones/parry/crates/parry3d" }

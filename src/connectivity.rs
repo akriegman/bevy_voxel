@@ -1,5 +1,6 @@
 use std::collections::*;
 
+use bevy::ecs::system::*;
 use bevy::math::*;
 use bevy::prelude::*;
 
@@ -52,7 +53,7 @@ impl<C: Connector> BodyTracker<C> {
         }
     }
 
-    pub fn bodies<'a>(&'a self, grid: &'a Grid<C::Item>) -> Bodies<'a, C> {
+    pub fn bodies<'w, 's>(&'w self, grid: &'w GridRef<'w, 's, C::Item>) -> Bodies<'w, 's, C> {
         Bodies {
             tracker: self,
             grid,
@@ -64,10 +65,13 @@ impl<C: Connector> BodyTracker<C> {
 /* --------------------------- system -------------------------- */
 
 fn check_connectivity<C: Connector>(
-    grids: Query<(&Grid<C::Item>, &mut BodyTracker<C>, Option<&Boundary>), Changed<Grid<C::Item>>>,
+    // todo add Changed<Chunk<C::Item>> filter
+    grids: Grids<C::Item>,
+    trackers: Query<(Entity, &mut BodyTracker<C>, Option<&Boundary>)>,
 ) {
     let mut stack = Vec::new();
-    for (grid, bodies, boundary) in grids {
+    for (grid_entity, bodies, boundary) in trackers {
+        let grid = grids.grid(grid_entity).expect("bodytracker with no grid");
         let bodies = bodies.into_inner();
         // I think it might be best if we rebuild this from scratch...
         bodies.graph.clear();
@@ -76,7 +80,7 @@ fn check_connectivity<C: Connector>(
         }
 
         // todo add dirty chunking
-        for (chunk_idx, chunk) in &grid.chunks {
+        for (chunk_idx, chunk) in grid.chunks() {
             bodies.face_bodies.insert(*chunk_idx, Default::default());
             bodies.reps.entry(*chunk_idx).or_default().clear();
 
@@ -148,7 +152,7 @@ fn check_connectivity<C: Connector>(
 
         // link chunks to their neighbors
         // tbd if we should keep the graph for clean chunks and just do this for dirty chunks
-        for chunk_idx in grid.chunks.keys() {
+        for (chunk_idx, _) in grid.chunks() {
             for face in Element::FACES {
                 let Some(face_bodies) = bodies.face_bodies.get(&chunk_idx) else {
                     continue;
@@ -196,14 +200,14 @@ fn check_connectivity<C: Connector>(
 
 /* ------------------------- iterators ------------------------- */
 
-pub struct Bodies<'a, C: Connector> {
-    tracker: &'a BodyTracker<C>,
-    grid: &'a Grid<C::Item>,
+pub struct Bodies<'w, 's, C: Connector> {
+    tracker: &'w BodyTracker<C>,
+    grid: &'w GridRef<'w, 's, C::Item>,
     unvisited: HashSet<Piece>,
 }
 
-impl<'a, C: Connector> Iterator for Bodies<'a, C> {
-    type Item = Body<'a, C>;
+impl<'w, 's, C: Connector> Iterator for Bodies<'w, 's, C> {
+    type Item = Body<'w, 's, C>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let &start = if self.unvisited.contains(&None) {
@@ -231,16 +235,16 @@ impl<'a, C: Connector> Iterator for Bodies<'a, C> {
     }
 }
 
-pub struct Body<'a, C: Connector> {
-    tracker: &'a BodyTracker<C>,
-    grid: &'a Grid<C::Item>,
+pub struct Body<'w, 's, C: Connector> {
+    tracker: &'w BodyTracker<C>,
+    grid: &'w GridRef<'w, 's, C::Item>,
     pieces: Vec<Piece>,
     current_chunk: IVec3,
     stack: Vec<IVec3>,
     visited: Chunk<bool>,
 }
 
-impl<'a, C: Connector> Iterator for Body<'a, C> {
+impl<'w, 's, C: Connector> Iterator for Body<'w, 's, C> {
     type Item = IVec3;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -249,7 +253,7 @@ impl<'a, C: Connector> Iterator for Body<'a, C> {
                 continue;
             }
             self.visited[vox] = true;
-            let chunk = self.grid.chunks.get(&self.current_chunk).unwrap();
+            let chunk = self.grid.get_chunk(self.current_chunk).unwrap();
             for face in Element::FACES.iter().rev() {
                 if let Some(nbr) = chunk.get(vox + *face)
                     && C::solid(nbr)

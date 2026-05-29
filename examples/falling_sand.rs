@@ -11,7 +11,7 @@ use bevy::window::{CursorGrabMode, CursorOptions};
 
 use avian3d::prelude::*;
 
-use voxxelmaxx::prelude::*;
+use bevy_voxel::prelude::*;
 
 /* -------------------------- setup ---------------------------- */
 
@@ -117,11 +117,17 @@ struct Player {
 
 /* -------------------- cellular automata ---------------------- */
 
-fn falling_sand(mut grid: Single<&mut Grid<u8>, With<Boundary>>, mut ticks: Local<usize>) {
+fn falling_sand(
+    mut grids: GridsMut<u8>,
+    grid: Single<Entity, With<Boundary>>,
+    mut ticks: Local<usize>,
+) {
     *ticks += 1;
     if *ticks % 2 != 0 {
         return;
     }
+
+    let grid = grids.grid(grid);
 
     'voxel: for idx in prism(IVec3::splat(-2 * N as i32), IVec3::splat(2 * N as i32)) {
         let vox = *grid.get(idx).unwrap();
@@ -174,9 +180,10 @@ impl Connector for SandConnector {
 
 fn check_islands(
     mut cmd: Commands,
-    grids: Query<
+    grids: GridsMut<u8>,
+    entities: Query<
         (
-            &mut Grid<u8>,
+            Entity,
             &BodyTracker<SandConnector>,
             &GlobalTransform,
             &MeshMaterial3d<StandardMaterial>,
@@ -184,7 +191,8 @@ fn check_islands(
         Changed<BodyTracker<SandConnector>>,
     >,
 ) {
-    for (mut grid, bodies, gtf, material) in grids {
+    for (grid, bodies, gtf, material) in entities {
+        let grid = grids.grid(grid);
         // the first body is the boundary component, so we skip it.
         //
         // in order to save on memory, BodyTracker needs a reference to the grid
@@ -206,10 +214,11 @@ fn check_islands(
                 popped,
                 BodyTracker::<SandConnector>::new(),
                 RigidBody::Dynamic,
-                Collider::sphere(1.),
                 gtf.compute_transform(),
                 material.clone(),
             ));
+            // we get a warning about having zero mass for the first frame, before `colliders`
+            // initializes the collider. TODO fix this?
         }
     }
 }
