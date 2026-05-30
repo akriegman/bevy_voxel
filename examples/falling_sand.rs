@@ -56,7 +56,7 @@ fn setup(
         },
         Transform::from_xyz(1.5, 0.5, 1.5),
         RigidBody::Kinematic,
-        Collider::capsule(0.25, 0.5),
+        Collider::capsule(0.5, 1.),
     ));
     println!("");
     println!("controls:");
@@ -72,12 +72,8 @@ fn setup(
 
     /* ------------------------ world -------------------------- */
 
-    let mut grid = Grid::<u8>::new();
-    for idx in prism(IVec3::splat(-2 * N as i32), IVec3::splat(2 * N as i32)) {
-        grid.set(idx, if idx.y >= -(N as i32) { 0x00 } else { 0x80 })
-    }
     cmd.spawn((
-        grid,
+        Grid::<u8>::new(),
         BodyTracker::<SandConnector>::new(),
         Boundary,
         MeshMaterial3d(materials.add(StandardMaterial {
@@ -86,7 +82,13 @@ fn setup(
         })),
         Transform::from_scale(Vec3::splat(1. / N as f32)),
         RigidBody::Static,
-    ));
+    ))
+    .queue(|mut entity: EntityWorldMut| {
+        let mut grid = entity.get_mut::<Grid<u8>>().unwrap();
+        for idx in prism(IVec3::splat(-2 * N as i32), IVec3::splat(2 * N as i32)) {
+            grid.set(idx, if idx.y >= -(N as i32) { 0x00 } else { 0x80 })
+        }
+    });
 
     /* ------------------------ light -------------------------- */
 
@@ -197,19 +199,28 @@ fn check_islands(
             .map(Iterator::collect)
             .collect();
         for island in islands {
-            let mut popped = Grid::<u8>::new();
-            for vox in &island {
-                popped.set(*vox, *grid.get(*vox).unwrap());
-                *grid.get_mut(*vox).unwrap() = 0x00;
-            }
+            let popped = island
+                .into_iter()
+                .map(|idx| {
+                    let vox = *grid.get(idx).unwrap();
+                    *grid.get_mut(idx).unwrap() = 0x00;
+                    (idx, vox)
+                })
+                .collect::<Vec<_>>();
             cmd.spawn((
-                popped,
+                Grid::<u8>::new(),
                 BodyTracker::<SandConnector>::new(),
                 RigidBody::Dynamic,
-                Collider::sphere(1.),
+                Collider::sphere(1.), // todo: we shouldn't have to put a placeholder here
                 gtf.compute_transform(),
                 material.clone(),
-            ));
+            ))
+            .queue(|mut entity: EntityWorldMut| {
+                let mut grid = entity.get_mut::<Grid<u8>>().unwrap();
+                for (idx, vox) in popped {
+                    grid.set(idx, vox);
+                }
+            });
         }
     }
 }
@@ -280,7 +291,11 @@ fn mesh(
             }
         }
 
-        cmd.entity(entity).insert(Mesh3d(
+        if positions.len() == 0 {
+            continue;
+        }
+
+        cmd.entity(entity).try_insert(Mesh3d(
             meshes.add(
                 Mesh::new(
                     PrimitiveTopology::TriangleList,
@@ -316,30 +331,32 @@ const PALETTE: [Vec4; 256] = {
 
 fn colliders(mut cmd: Commands, grids: Query<(Entity, &Grid<u8>), Changed<Grid<u8>>>) {
     for (entity, grid) in grids {
-        cmd.entity(entity).try_insert(Collider::voxels(
-            Vec3::splat(1.),
-            &grid
-                .chunks
-                .iter()
-                .map(|(k, v)| {
-                    prism(IVec3::ZERO, DIMS).filter_map(move |idx| {
-                        if v[idx] & 0x80 == 0 {
-                            None
-                        } else {
-                            Some(k * DIMS + idx)
-                        }
-                    })
+        let voxels = grid
+            .iter()
+            .map(|(k, v)| {
+                prism(IVec3::ZERO, DIMS).filter_map(move |idx| {
+                    if v[idx] & 0x80 == 0 {
+                        None
+                    } else {
+                        Some(k * DIMS + idx)
+                    }
                 })
-                .flatten()
-                .collect::<Vec<_>>(),
-        ));
+            })
+            .flatten()
+            .collect::<Vec<_>>();
+
+        if voxels.len() == 0 {
+            cmd.entity(entity).despawn();
+        } else {
+            cmd.entity(entity)
+                .try_insert(Collider::voxels(Vec3::splat(1.), &voxels));
+        }
     }
 }
 
 /* ------------------------- interact -------------------------- */
 
 fn interact(
-    mut cmd: Commands,
     head: Single<&GlobalTransform, With<Camera3d>>,
     player: Single<&mut Player>,
     mouse: Res<ButtonInput<MouseButton>>,
@@ -402,9 +419,6 @@ fn interact(
                     *cell = player.material;
                 }
             }
-        }
-        if grid.count() == 0 {
-            cmd.entity(*entity).despawn();
         }
     }
 }

@@ -76,7 +76,7 @@ fn check_connectivity<C: Connector>(
         }
 
         // todo add dirty chunking
-        for (chunk_idx, chunk) in &grid.chunks {
+        for (chunk_idx, chunk) in grid.iter() {
             bodies.face_bodies.insert(*chunk_idx, Default::default());
             bodies.reps.entry(*chunk_idx).or_default().clear();
 
@@ -148,7 +148,7 @@ fn check_connectivity<C: Connector>(
 
         // link chunks to their neighbors
         // tbd if we should keep the graph for clean chunks and just do this for dirty chunks
-        for chunk_idx in grid.chunks.keys() {
+        for (chunk_idx, _) in grid.iter() {
             for face in Element::FACES {
                 let Some(face_bodies) = bodies.face_bodies.get(&chunk_idx) else {
                     continue;
@@ -249,7 +249,7 @@ impl<'a, C: Connector> Iterator for Body<'a, C> {
                 continue;
             }
             self.visited[vox] = true;
-            let chunk = self.grid.chunks.get(&self.current_chunk).unwrap();
+            let chunk = self.grid.get_chunk(self.current_chunk).unwrap();
             for face in Element::FACES.iter().rev() {
                 if let Some(nbr) = chunk.get(vox + *face)
                     && C::solid(nbr)

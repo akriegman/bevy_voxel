@@ -31,10 +31,12 @@ fn btoi(b: u8) -> i32 {
 /// In some use cases the +x and -x bits may both be set, if something lies on both faces.
 /// Eg for a 1 voxel thick wall, all of its voxels lie on both the right and left sides.
 ///
-/// The top two bits can also be used in some cases. For example, in parry3d's voxel collider
-/// they use a similar bit packing scheme. For them 0b00111111 represents an isolated voxel
-/// and 0b00000000 represents an interior voxel, so they need 0b01000000 to represent an
-/// empty voxel.
+/// I'm thinking we should take the seventh bit to represent "inversion"... I'll wait until
+/// we have more concrete use cases to define this more precisely.
+///
+/// parry3d's voxel collider uses a similar bit packing scheme. For them 0b00111111 represents
+/// an isolated voxel, 0b00000000 represents an interior voxel, and 0b01000000
+/// represents an empty voxel, which is consistent with our scheme.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Element(u8);
 
